@@ -1,19 +1,4 @@
-const express = require('express');
-const app = express();
-
-const PORT = process.env.PORT || 3000;
-const KEYS = [
-  process.env.AERODATABOX_KEY_1,
-  process.env.AERODATABOX_KEY_2,
-  process.env.AERODATABOX_KEY_3
-].filter(Boolean);
-
 const ICAO = 'OIIE'; // فرودگاه امام خمینی
-
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  next();
-});
 
 function todayRangesTehran() {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tehran' }));
@@ -27,10 +12,10 @@ function todayRangesTehran() {
   ];
 }
 
-async function fetchWindow(from, to) {
+async function fetchWindow(from, to, keys) {
   const url = `https://aerodatabox.p.rapidapi.com/flights/airports/icao/${ICAO}/${from}/${to}?direction=Departure&withLeg=true&withCancelled=true&withCodeshared=true`;
   let lastErr = null;
-  for (const key of KEYS) {
+  for (const key of keys) {
     try {
       const r = await fetch(url, {
         headers: {
@@ -49,10 +34,17 @@ async function fetchWindow(from, to) {
   throw new Error(lastErr || 'no keys configured');
 }
 
-app.get('/flights', async (req, res) => {
+module.exports = async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
   try {
+    const keys = [
+      process.env.AERODATABOX_KEY_1,
+      process.env.AERODATABOX_KEY_2,
+      process.env.AERODATABOX_KEY_3
+    ].filter(Boolean);
+
     const ranges = todayRangesTehran();
-    const results = await Promise.allSettled(ranges.map(([f, t]) => fetchWindow(f, t)));
+    const results = await Promise.allSettled(ranges.map(([f, t]) => fetchWindow(f, t, keys)));
     let departures = [];
     let windowsOk = 0;
     const debug = [];
@@ -64,14 +56,8 @@ app.get('/flights', async (req, res) => {
         debug.push(String(r.reason));
       }
     }
-    res.json({ departures, windowsOk, debug });
+    res.status(200).json({ departures, windowsOk, debug });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
-});
-
-app.get('/', (req, res) => {
-  res.send('Flight proxy is running.');
-});
-
-app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+};
